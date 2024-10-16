@@ -1,7 +1,7 @@
 import board
 from digitalio import DigitalInOut, Direction
 from analogio import AnalogIn
-from time import sleep
+from time import monotonic_ns
 
 # setup pins
 microphone = AnalogIn(board.IO1) # Microphone is set up on SIG / IO1
@@ -24,17 +24,30 @@ led_pins = [
    
 ]
 
-leds = [DigitalInOut(pin) for pin in led_pins]
 
-for led in leds:
-    led.direction = Direction.OUTPUT
+lookup = [(DigitalInOut(pin),23000 + 1000 * i) for i,pin in enumerate(led_pins)]
+rlookup = lookup[::-1]
 
+for led in lookup:
+    led[0].direction = Direction.OUTPUT
+
+last_change = monotonic_ns()
 # main loop
 while True:
     volume = microphone.value
-    leds[0].value = volume >= 23000 # Lowest level is independent
-    for i in range(1,10):
-        sleep(.005 * (9-i)) # The lower the volume the longer it takes to change
-        leds[i].value = (volume >= 23000 + (500 * i)
-                          or leds[i+1].value) # LED cannot turn off if the one above it is on
-    leds[10].value = volume >= 27500 # Highest level is independent
+    for l,t in lookup:
+        if l.value:
+            continue
+        if volume < t:
+            break
+        l.value = True
+
+    if monotonic_ns() - last_change >= 100000000:
+        for l,t in rlookup:
+            if not l.value:
+                continue
+            if microphone.value >= t:
+                break
+            l.value = False
+            last_change = monotonic_ns()
+            break
